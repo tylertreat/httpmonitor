@@ -16,8 +16,7 @@ import (
 // clfNumParts is the number of components in a Common Log Format entry.
 const clfNumParts = 7
 
-// clfRegexp matches a line in Common Log Format, e.g.
-// 127.0.0.1 user-identifier frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326
+// clfRegexp matches a line in Common Log Format, i.e. "host ident authuser date request status bytes".
 var clfRegexp = regexp.MustCompile(`^(\S+) (\S+) (\S+) \[([\w:/]+\s[+\-]\d{4})\] "(.*)" (\d{3}|-) (\d+|-)`)
 
 // Log is an HTTP log entry, e.g. as parsed from Common Log Format.
@@ -46,11 +45,11 @@ type Log struct {
 
 // Reader reads log entries from an actively written to HTTP log file.
 type Reader interface {
-	// Read begins reading log entries from the file starting at the beginning
+	// Open begins reading log entries from the file starting at the beginning
 	// and places them on the channel. If the Reader reaches the end of the
 	// file, it will wait for new log entries to be appended until Close is
 	// called.
-	Read() <-chan *Log
+	Open() (<-chan *Log, error)
 
 	// Close stops the Reader.
 	Close() error
@@ -59,8 +58,7 @@ type Reader interface {
 // clfReader implements the Reader interface for log files using Common Log
 // Format.
 type clfReader struct {
-	file    *os.File
-	reader  *bufio.Reader
+	file    string
 	watcher *fsnotify.Watcher
 	logs    chan *Log
 	close   chan struct{}
@@ -68,30 +66,33 @@ type clfReader struct {
 
 // NewCommonLogFormatReader returns a new Reader for log files using Common Log
 // Format.
-func NewCommonLogFormatReader(file *os.File) (Reader, error) {
+func NewCommonLogFormatReader(file string) (Reader, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create file watcher")
 	}
-	if err := watcher.Add(file.Name()); err != nil {
+	if err := watcher.Add(file); err != nil {
 		watcher.Close()
 		return nil, errors.Wrap(err, "failed to add file watch")
 	}
 	return &clfReader{
 		file:    file,
-		reader:  bufio.NewReader(file),
 		watcher: watcher,
 		logs:    make(chan *Log),
 		close:   make(chan struct{}),
 	}, nil
 }
 
-// Read begins reading log entries from the file starting at the beginning and
+// Open begins reading log entries from the file starting at the beginning and
 // places them on the channel. If the Reader reaches the end of the file, it
 // will wait for new log entries to be appended until Close is called.
-func (c *clfReader) Read() <-chan *Log {
-	go c.read()
-	return c.logs
+func (c *clfReader) Open() (<-chan *Log, error) {
+	file, err := os.Open(c.file)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to open file")
+	}
+	go c.read(file)
+	return c.logs, nil
 }
 
 // Close stops the Reader.
@@ -107,11 +108,13 @@ func (c *clfReader) Close() error {
 // and places them on the channel. It starts by parsing the current contents of
 // the file, then once it reaches the end of the file, it waits for new logs to
 // be written. It runs until Close is called.
-func (c *clfReader) read() {
+func (c *clfReader) read(file *os.File) {
+	reader := bufio.NewReader(file)
+	defer file.Close()
 READLOOP:
 	for {
 		// TODO: handle lines that exceed the reader's buffer size.
-		line, _, err := c.reader.ReadLine()
+		line, _, err := reader.ReadLine()
 		if err == io.EOF {
 			// If we reach EOF, wait for new logs to be written.
 			if c.waitForLogs() {
@@ -121,14 +124,14 @@ READLOOP:
 			break
 		}
 		if err != nil {
-			log.Fatalf("Error reading from file %s: %v\n", c.file.Name(), err)
+			log.Fatalf("Error reading from file %s: %v\n", c.file, err)
 		}
 
 		parts := clfRegexp.FindStringSubmatch(string(line))
 		// TODO: could make this more robust.
 		// Add 1 because the first part is the entire expression.
 		if len(parts) != clfNumParts+1 {
-			log.Fatalf("File %s is not in Common Log Format\n", c.file.Name())
+			log.Fatalf("File %s is not in Common Log Format\n", c.file)
 		}
 
 		l := &Log{
@@ -160,7 +163,7 @@ func (c *clfReader) waitForLogs() bool {
 		return true
 	case err, ok := <-c.watcher.Errors:
 		if ok {
-			log.Fatalf("Watcher error on file %s: %v", c.file.Name(), err)
+			log.Fatalf("Watcher error on file %s: %v", c.file, err)
 		}
 		return false
 	case <-c.close:

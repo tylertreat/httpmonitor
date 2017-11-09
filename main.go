@@ -20,19 +20,17 @@ func main() {
 		log.Fatal("Must provide --file flag")
 	}
 
-	f, err := os.Open(file)
-	if err != nil {
-		log.Fatalf("Failed to open log file %s: %v", file, err)
-	}
-
-	reader, err := monitor.NewCommonLogFormatReader(f)
+	reader, err := monitor.NewCommonLogFormatReader(file)
 	if err != nil {
 		log.Fatalf("Failed to create log file reader: %v", err)
 	}
 
 	handleSignals(reader)
 
-	logs := reader.Read()
+	logs, err := reader.Open()
+	if err != nil {
+		log.Fatalf("Failed to read log file: %v", err)
+	}
 	for l := range logs {
 		fmt.Printf("%+v\n", l)
 	}
