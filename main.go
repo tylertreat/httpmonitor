@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/tylertreat/httpmonitor/monitor"
 )
@@ -27,12 +28,22 @@ func main() {
 
 	handleSignals(reader)
 
-	logs, err := reader.Open()
-	if err != nil {
-		log.Fatalf("Failed to read log file: %v", err)
-	}
-	for l := range logs {
-		fmt.Printf("%+v\n", l)
+	collector := monitor.NewCollector()
+	go func() {
+		c := time.Tick(10 * time.Second)
+		for _ = range c {
+			fmt.Printf("===== Statistics (%s) =====\n", time.Now().Format("01/02/06 15:04:05"))
+			topHits := collector.TopSectionHits()
+			for i := len(topHits) - 1; i >= 0; i-- {
+				element := topHits[i]
+				fmt.Printf("%s: %d\n", element.Data, element.Freq)
+			}
+		}
+	}()
+
+	fmt.Println("Starting monitor...")
+	if err := collector.Start(reader); err != nil {
+		log.Fatalf("Failed to start log collector: %v", err)
 	}
 }
 
