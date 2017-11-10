@@ -40,7 +40,7 @@ type Log struct {
 	Status int
 
 	// Size is the size of the response returned to the client in bytes.
-	Size int
+	Size int64
 }
 
 // Reader reads log entries from an actively written to HTTP log file.
@@ -147,9 +147,9 @@ READLOOP:
 			l.Timestamp = timestamp
 		}
 
-		// Parse status code and size (ignoring error since we'll just accept zero).
+		// Parse status code and size (don't handle errors since we'll accept zero).
 		l.Status, _ = strconv.Atoi(parts[6])
-		l.Size, _ = strconv.Atoi(parts[7])
+		l.Size, _ = strconv.ParseInt(parts[7], 10, 64)
 
 		c.logs <- l
 	}

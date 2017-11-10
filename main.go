@@ -32,12 +32,7 @@ func main() {
 	go func() {
 		c := time.Tick(10 * time.Second)
 		for _ = range c {
-			fmt.Printf("===== Statistics (%s) =====\n", time.Now().Format("01/02/06 15:04:05"))
-			topHits := collector.TopSectionHits()
-			for i := len(topHits) - 1; i >= 0; i-- {
-				element := topHits[i]
-				fmt.Printf("%s: %d\n", element.Data, element.Freq)
-			}
+			fmt.Println(collector.Summary())
 		}
 	}()
 
