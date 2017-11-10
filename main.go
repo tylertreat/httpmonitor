@@ -13,8 +13,12 @@ import (
 )
 
 func main() {
-	var file string
+	var (
+		file string
+		opts monitor.CollectorOpts
+	)
 	flag.StringVar(&file, "file", "", "Log file to read from")
+	flag.UintVar(&opts.NumTopSections, "sections", 5, "Number of top sections to display")
 	flag.Parse()
 
 	if file == "" {
@@ -28,7 +32,7 @@ func main() {
 
 	handleSignals(reader)
 
-	collector := monitor.NewCollector()
+	collector := monitor.NewCollector(opts)
 	go func() {
 		c := time.Tick(10 * time.Second)
 		for _ = range c {

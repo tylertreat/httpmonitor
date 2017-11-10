@@ -30,6 +30,11 @@ type StatusFreq struct {
 	ServerError   uint64
 }
 
+// CollectorOpts contains options for configuring a Collector.
+type CollectorOpts struct {
+	NumTopSections uint
+}
+
 // Collector receives Logs from a Reader and tracks summary statistics.
 type Collector struct {
 	mu          sync.RWMutex
@@ -41,10 +46,10 @@ type Collector struct {
 }
 
 // NewCollector creates a Collector used to receive and summarize Log data.
-func NewCollector() *Collector {
+func NewCollector(opts CollectorOpts) *Collector {
 	ipHll, _ := boom.NewDefaultHyperLogLog(0.01)
 	return &Collector{
-		topSections: boom.NewTopK(0.001, 0.99, 5),
+		topSections: boom.NewTopK(0.001, 0.99, opts.NumTopSections),
 		ipHll:       ipHll,
 		sizeHist:    hdrhistogram.NewWindowed(3, 1, maxRecordableSize, 5),
 	}
