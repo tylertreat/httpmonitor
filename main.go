@@ -12,13 +12,18 @@ import (
 	"github.com/tylertreat/httpmonitor/monitor"
 )
 
+const defaultReportingInterval = 10 * time.Second
+
 func main() {
 	var (
-		file string
-		opts monitor.CollectorOpts
+		file              string
+		opts              monitor.CollectorOpts
+		reportingInterval time.Duration
 	)
 	flag.StringVar(&file, "file", "", "Log file to read from")
 	flag.UintVar(&opts.NumTopSections, "sections", 5, "Number of top sections to display")
+	flag.DurationVar(&reportingInterval, "reporting-interval", defaultReportingInterval,
+		"Interval at which to report summary data")
 	flag.Parse()
 
 	if file == "" {
@@ -34,7 +39,7 @@ func main() {
 
 	collector := monitor.NewCollector(opts)
 	go func() {
-		c := time.Tick(10 * time.Second)
+		c := time.Tick(reportingInterval)
 		for _ = range c {
 			fmt.Println(collector.Summary())
 		}
