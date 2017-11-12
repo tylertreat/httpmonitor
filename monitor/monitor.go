@@ -22,6 +22,7 @@ type Monitor struct {
 	reader    reader
 	collector *collector
 	opts      MonitorOpts
+	close     chan struct{}
 }
 
 // New creates a new Monitor that collects data from the given HTTP log file in
@@ -36,25 +37,41 @@ func New(file string, opts MonitorOpts) (*Monitor, error) {
 		reader:    reader,
 		collector: collector,
 		opts:      opts,
+		close:     make(chan struct{}),
 	}, nil
 }
 
-// Start collecting data and alerting. Summary data is written to stdout.
+// Start collecting data, alerting, and writing summary data to stdout until
+// the Monitor is closed.
 func (m *Monitor) Start() error {
-	go func() {
-		c := time.Tick(m.opts.ReportingInterval)
-		for _ = range c {
-			fmt.Println(m.summary())
-		}
-	}()
-
+	go m.report()
 	err := m.collector.Start(m.reader)
+	m.Stop()
 	return errors.Wrap(err, "failed to start collector")
 }
 
-// Stop the Monitor.
+// report prints summary data to stdout on the configured interval until the
+// Monitor is closed.
+func (m *Monitor) report() {
+	c := time.Tick(m.opts.ReportingInterval)
+	for {
+		select {
+		case <-c:
+		case <-m.close:
+			return
+		}
+		fmt.Println(m.summary())
+	}
+}
+
+// Stop the Monitor. Once the Monitor has been stopped, it cannot be started
+// again.
 func (m *Monitor) Stop() error {
-	return m.reader.Close()
+	if err := m.reader.Close(); err != nil {
+		return errors.Wrap(err, "failed to close log reader")
+	}
+	close(m.close)
+	return nil
 }
 
 // summary returns a point-in-time snapshot of the data.
