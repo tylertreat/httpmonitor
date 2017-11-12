@@ -13,11 +13,14 @@ import (
 
 // Summary is a point-in-time snapshot of the traffic data.
 type Summary struct {
-	Timestamp   time.Time
-	TopSections []*boom.Element
-	DistinctIPs uint64
-	SizeHist    *hdrhistogram.Histogram
-	StatusFreq  StatusFreq
+	Timestamp     time.Time
+	TopSections   []*boom.Element
+	DistinctIPs   uint64
+	SizeHist      *hdrhistogram.Histogram
+	StatusFreq    statusFreq
+	HitsPerSecond uint64
+	AvgHits       float64
+	Window        time.Duration
 }
 
 // String returns a string representation of the summary suitable for printing.
@@ -25,6 +28,8 @@ func (s *Summary) String() string {
 	str := fmt.Sprintf("===== SUMMARY [%s] =================>\n", s.Timestamp.Format("01/02/06 15:04:05"))
 	str += s.topHitsString()
 	str += fmt.Sprintf("Unique visitors:\t%d\n", s.DistinctIPs)
+	str += fmt.Sprintf("Hits/s:\t\t\t%d\n", s.HitsPerSecond)
+	str += fmt.Sprintf("Mean hits (%s):\t%.2f\n", s.Window, s.AvgHits)
 	str += "------- Responses -----------------------\n"
 	str += fmt.Sprintf("1xx: %d, 2xx: %d, 3xx: %d, 4xx: %d, 5xx: %d\n",
 		s.StatusFreq.Informational,
