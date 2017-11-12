@@ -34,6 +34,7 @@ func TestMonitorAlerting(t *testing.T) {
 			AlertThreshold: testAlertThreshold,
 			AlertHook:      alerts,
 			NumTopSections: 1,
+			Output:         ioutil.Discard,
 		}
 	)
 

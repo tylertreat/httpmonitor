@@ -20,7 +20,7 @@ const (
 func main() {
 	var (
 		file string
-		opts monitor.MonitorOpts
+		opts = monitor.MonitorOpts{Output: os.Stdout}
 	)
 	flag.StringVar(&file, "file", "", "Log file to read from")
 	flag.UintVar(&opts.NumTopSections, "sections", 5, "Number of top sections to display")

@@ -2,6 +2,8 @@ package monitor
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/codahale/hdrhistogram"
@@ -25,6 +27,7 @@ type MonitorOpts struct {
 	AlertThreshold    float64
 	AlertHook         chan<- Alert
 	ReportingInterval time.Duration
+	Output            io.Writer
 }
 
 // Monitor reads, parses, and collects HTTP traffic data from a configured log
@@ -39,6 +42,9 @@ type Monitor struct {
 // New creates a new Monitor that collects data from the given HTTP log file in
 // Common Log Format.
 func New(file string, opts MonitorOpts) (*Monitor, error) {
+	if opts.Output == nil {
+		opts.Output = os.Stdout
+	}
 	reader, err := NewCommonLogFormatReader(file)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create log file reader")
@@ -52,8 +58,8 @@ func New(file string, opts MonitorOpts) (*Monitor, error) {
 	}, nil
 }
 
-// Start collecting data, alerting, and writing summary data to stdout until
-// the Monitor is closed. This is a blocking call.
+// Start collecting data, alerting, and writing summary data until the Monitor
+// is closed. This is a blocking call.
 func (m *Monitor) Start() error {
 	go m.report()
 	go m.alert()
@@ -62,8 +68,8 @@ func (m *Monitor) Start() error {
 	return errors.Wrap(err, "failed to start collector")
 }
 
-// report prints summary data to stdout on the configured interval until the
-// Monitor is closed.
+// report prints summary data on the configured interval until the Monitor is
+// closed.
 func (m *Monitor) report() {
 	c := time.Tick(m.opts.ReportingInterval)
 	for {
@@ -72,13 +78,13 @@ func (m *Monitor) report() {
 		case <-m.close:
 			return
 		}
-		fmt.Println(m.summary())
+		fmt.Fprintln(m.opts.Output, m.summary())
 	}
 }
 
-// alert writes a message to stdout when traffic exceeds the alert threshold on
-// average within the alert window. When traffic drops back below the threshold,
-// it writes a recovered message. It does this until the Monitor is closed.
+// alert writes a message when traffic exceeds the alert threshold on average
+// within the alert window. When traffic drops back below the threshold, it
+// writes a recovered message. It does this until the Monitor is closed.
 func (m *Monitor) alert() {
 	var (
 		c       = time.Tick(quantum * 2)
@@ -95,14 +101,15 @@ func (m *Monitor) alert() {
 			now = time.Now()
 		)
 		if avg > m.opts.AlertThreshold && !alerted {
-			fmt.Printf("High traffic generated an alert - hits = %.2f, triggered at %s\n", avg, now)
+			fmt.Fprintf(m.opts.Output, "High traffic generated an alert - hits = %.2f, triggered at %s\n",
+				avg, now)
 			alerted = true
 			select {
 			case m.opts.AlertHook <- Alert{AvgHits: avg, Time: now}:
 			default:
 			}
 		} else if avg <= m.opts.AlertThreshold && alerted {
-			fmt.Printf("Traffic recovered - hits = %.2f, recovered at %s\n", avg, now)
+			fmt.Fprintf(m.opts.Output, "Traffic recovered - hits = %.2f, recovered at %s\n", avg, now)
 			alerted = false
 			select {
 			case m.opts.AlertHook <- Alert{Recovered: true, AvgHits: avg, Time: now}:
