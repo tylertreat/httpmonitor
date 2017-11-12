@@ -11,11 +11,19 @@ import (
 // quantum is the granularity of time-series measurements.
 const quantum = time.Second
 
+// Alert is used to emit traffic alert notifications.
+type Alert struct {
+	Recovered bool
+	AvgHits   float64
+	Time      time.Time
+}
+
 // MonitorOpts contains options for configuring a Monitor.
 type MonitorOpts struct {
 	NumTopSections    uint
 	AlertWindow       time.Duration
 	AlertThreshold    float64
+	AlertHook         chan<- Alert
 	ReportingInterval time.Duration
 }
 
@@ -45,7 +53,7 @@ func New(file string, opts MonitorOpts) (*Monitor, error) {
 }
 
 // Start collecting data, alerting, and writing summary data to stdout until
-// the Monitor is closed.
+// the Monitor is closed. This is a blocking call.
 func (m *Monitor) Start() error {
 	go m.report()
 	go m.alert()
@@ -89,9 +97,17 @@ func (m *Monitor) alert() {
 		if avg > m.opts.AlertThreshold && !alerted {
 			fmt.Printf("High traffic generated an alert - hits = %.2f, triggered at %s\n", avg, now)
 			alerted = true
+			select {
+			case m.opts.AlertHook <- Alert{AvgHits: avg, Time: now}:
+			default:
+			}
 		} else if avg <= m.opts.AlertThreshold && alerted {
 			fmt.Printf("Traffic recovered - hits = %.2f, recovered at %s\n", avg, now)
 			alerted = false
+			select {
+			case m.opts.AlertHook <- Alert{Recovered: true, AvgHits: avg, Time: now}:
+			default:
+			}
 		}
 	}
 }
