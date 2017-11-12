@@ -42,13 +42,13 @@ type collector struct {
 }
 
 // newCollector creates a collector used to receive and summarize log data.
-func newCollector(numTopSections uint, window time.Duration) *collector {
+func newCollector(numTopSections uint, window, quantum time.Duration) *collector {
 	ipHll, _ := boom.NewDefaultHyperLogLog(0.01)
 	return &collector{
 		topSections: boom.NewTopK(0.001, 0.99, numTopSections),
 		ipHll:       ipHll,
 		sizeHist:    hdrhistogram.NewWindowed(3, 1, maxRecordableSize, 5),
-		averager:    newWindowedAverager(window, time.Second),
+		averager:    newWindowedAverager(window, quantum),
 	}
 }
 

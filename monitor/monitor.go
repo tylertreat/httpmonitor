@@ -8,6 +8,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+// quantum is the granularity of time-series measurements.
+const quantum = time.Second
+
 // MonitorOpts contains options for configuring a Monitor.
 type MonitorOpts struct {
 	NumTopSections    uint
@@ -19,10 +22,10 @@ type MonitorOpts struct {
 // Monitor reads, parses, and collects HTTP traffic data from a configured log
 // file. It also provides alerting functionality.
 type Monitor struct {
-	reader    reader
-	collector *collector
-	opts      MonitorOpts
-	close     chan struct{}
+	*collector
+	reader reader
+	opts   MonitorOpts
+	close  chan struct{}
 }
 
 // New creates a new Monitor that collects data from the given HTTP log file in
@@ -32,10 +35,10 @@ func New(file string, opts MonitorOpts) (*Monitor, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create log file reader")
 	}
-	collector := newCollector(opts.NumTopSections, opts.AlertWindow)
+	collector := newCollector(opts.NumTopSections, opts.AlertWindow, quantum)
 	return &Monitor{
-		reader:    reader,
 		collector: collector,
+		reader:    reader,
 		opts:      opts,
 		close:     make(chan struct{}),
 	}, nil
@@ -45,6 +48,7 @@ func New(file string, opts MonitorOpts) (*Monitor, error) {
 // the Monitor is closed.
 func (m *Monitor) Start() error {
 	go m.report()
+	go m.alert()
 	err := m.collector.Start(m.reader)
 	m.Stop()
 	return errors.Wrap(err, "failed to start collector")
@@ -64,6 +68,34 @@ func (m *Monitor) report() {
 	}
 }
 
+// alert writes a message to stdout when traffic exceeds the alert threshold on
+// average within the alert window. When traffic drops back below the threshold,
+// it writes a recovered message. It does this until the Monitor is closed.
+func (m *Monitor) alert() {
+	var (
+		c       = time.Tick(quantum * 2)
+		alerted = false
+	)
+	for {
+		select {
+		case <-c:
+		case <-m.close:
+			return
+		}
+		var (
+			avg = m.averager.average()
+			now = time.Now()
+		)
+		if avg > m.opts.AlertThreshold && !alerted {
+			fmt.Printf("High traffic generated an alert - hits = %.2f, triggered at %s\n", avg, now)
+			alerted = true
+		} else if avg <= m.opts.AlertThreshold && alerted {
+			fmt.Printf("Traffic recovered - hits = %.2f, recovered at %s\n", avg, now)
+			alerted = false
+		}
+	}
+}
+
 // Stop the Monitor. Once the Monitor has been stopped, it cannot be started
 // again.
 func (m *Monitor) Stop() error {
@@ -77,15 +109,15 @@ func (m *Monitor) Stop() error {
 // summary returns a point-in-time snapshot of the data.
 func (m *Monitor) summary() *Summary {
 	s := &Summary{Timestamp: time.Now()}
-	m.collector.RLock()
-	defer m.collector.RUnlock()
+	m.RLock()
+	defer m.RUnlock()
 
-	s.TopSections = m.collector.topSections.Elements()
-	s.DistinctIPs = m.collector.ipHll.Count()
-	s.SizeHist = hdrhistogram.Import(m.collector.sizeHist.Merge().Export())
-	s.StatusFreq = m.collector.statusFreq
-	s.HitsPerSecond = m.collector.averager.latest()
-	s.AvgHits = m.collector.averager.average()
+	s.TopSections = m.topSections.Elements()
+	s.DistinctIPs = m.ipHll.Count()
+	s.SizeHist = hdrhistogram.Import(m.sizeHist.Merge().Export())
+	s.StatusFreq = m.statusFreq
+	s.HitsPerSecond = m.averager.latest()
+	s.AvgHits = m.averager.average()
 	s.Window = m.opts.AlertWindow
 	return s
 }

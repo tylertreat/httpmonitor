@@ -14,7 +14,7 @@ import (
 const (
 	defaultReportingInterval = 10 * time.Second
 	defaultAlertWindow       = 2 * time.Minute
-	defaultAlertThreshold    = 100
+	defaultAlertThreshold    = 50
 )
 
 func main() {
