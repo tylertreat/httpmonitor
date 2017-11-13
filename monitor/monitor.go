@@ -1,3 +1,6 @@
+// Package monitor provides an API for monitoring HTTP traffic processed from a
+// configured HTTP log file. The Monitor provides facilities for reading logs,
+// aggregating traffic data, and alerting on traffic events.
 package monitor
 
 import (
@@ -71,10 +74,15 @@ func (m *Monitor) Start() error {
 // report prints summary data on the configured interval until the Monitor is
 // closed.
 func (m *Monitor) report() {
-	c := time.Tick(m.opts.ReportingInterval)
+	// Don't report if the interval is zero.
+	if m.opts.ReportingInterval <= 0 {
+		return
+	}
+	t := time.NewTicker(m.opts.ReportingInterval)
+	defer t.Stop()
 	for {
 		select {
-		case <-c:
+		case <-t.C:
 		case <-m.close:
 			return
 		}
@@ -87,12 +95,13 @@ func (m *Monitor) report() {
 // writes a recovered message. It does this until the Monitor is closed.
 func (m *Monitor) alert() {
 	var (
-		c       = time.Tick(quantum * 2)
+		t       = time.NewTicker(quantum * 2)
 		alerted = false
 	)
+	defer t.Stop()
 	for {
 		select {
-		case <-c:
+		case <-t.C:
 		case <-m.close:
 			return
 		}

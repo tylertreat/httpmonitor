@@ -53,10 +53,11 @@ func (w *windowedAverager) quantize(hits <-chan time.Time) {
 // tick starts a loop that updates the current bucket based on the quantum
 // until the given channel is closed.
 func (w *windowedAverager) tick(stop <-chan struct{}) {
-	c := time.Tick(w.quantum)
+	t := time.NewTicker(w.quantum)
+	defer t.Stop()
 	for {
 		select {
-		case <-c:
+		case <-t.C:
 		case <-stop:
 			return
 		}
